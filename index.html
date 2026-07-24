@@ -1,0 +1,1648 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoxelCraft — воксельная песочница</title>
+<style>
+  :root{ color-scheme: dark; }
+  html,body{margin:0;padding:0;overflow:hidden;background:#000;height:100%;
+    font-family:'Segoe UI',Tahoma,Verdana,sans-serif; user-select:none;}
+  canvas{display:block;}
+  .hidden{display:none !important;}
+
+  /* ---------- Прицел ---------- */
+  #crosshair{position:fixed;top:50%;left:50%;width:20px;height:20px;
+    transform:translate(-50%,-50%);pointer-events:none;z-index:10;}
+  #crosshair::before,#crosshair::after{content:'';position:absolute;background:#fff;
+    box-shadow:0 0 2px #000, 0 0 1px #000;}
+  #crosshair::before{left:9px;top:0;width:2px;height:20px;}
+  #crosshair::after{top:9px;left:0;width:20px;height:2px;}
+
+  /* ---------- Хотбар ---------- */
+  #hotbar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
+    display:flex;gap:4px;z-index:10;}
+  .slot{width:52px;height:52px;background:rgba(20,20,20,0.55);
+    border:2px solid rgba(255,255,255,0.28);border-radius:4px;position:relative;
+    background-repeat:no-repeat;background-size:70% 70%;background-position:center;
+    image-rendering:pixelated;box-sizing:border-box;}
+  .slot.selected{border-color:#fff;box-shadow:0 0 10px rgba(255,255,255,0.85);}
+  .slot .count{position:absolute;bottom:1px;right:4px;color:#fff;font-size:12px;
+    text-shadow:1px 1px 1px #000, -1px -1px 1px #000;}
+
+  /* ---------- Визуальный переносимый предмет на курсоре ---------- */
+  #cursorItem {
+    position: fixed;
+    width: 52px;
+    height: 52px;
+    pointer-events: none;
+    z-index: 100;
+    background-repeat: no-repeat;
+    background-size: 70% 70%;
+    background-position: center;
+    image-rendering: pixelated;
+  }
+  #cursorItem .count {
+    position: absolute;
+    bottom: 1px;
+    right: 4px;
+    color: #fff;
+    font-size: 12px;
+    text-shadow: 1px 1px 1px #000, -1px -1px 1px #000;
+  }
+
+  /* ---------- Debug (F3) ---------- */
+  #debug{position:fixed;top:8px;left:8px;color:#e8e8e8;background:rgba(0,0,0,0.45);
+    padding:8px 10px;font:12px/1.55 'Consolas',monospace;z-index:10;white-space:pre;
+    border-radius:3px;}
+
+  /* ---------- Индикатор добычи ---------- */
+  #miningBar{position:fixed;top:57%;left:50%;transform:translate(-50%,0);
+    width:120px;height:6px;background:rgba(0,0,0,0.45);border:1px solid #000;
+    z-index:10;border-radius:2px;overflow:hidden;}
+  #miningBar .fill{height:100%;width:0%;background:linear-gradient(#fff,#ccc);}
+
+  /* ---------- Тост-уведомление ---------- */
+  #toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);
+    background:rgba(0,0,0,0.75);color:#fff;padding:8px 18px;border-radius:4px;
+    z-index:30;font-size:14px;}
+
+  /* ---------- Оверлеи (старт / пауза / инвентарь) ---------- */
+  #startScreen,#pauseMenu,#inventoryScreen{position:fixed;inset:0;display:flex;
+    align-items:center;justify-content:center;flex-direction:column;
+    background:rgba(6,8,14,0.82);color:#fff;z-index:20;gap:14px;text-align:center;}
+  #startScreen h1{font-size:40px;margin:0 0 4px;letter-spacing:2px;
+    text-shadow:2px 2px 0 #2e7d32;}
+  #startScreen p, #pauseMenu p{opacity:0.75;font-size:13px;max-width:420px;line-height:1.6;margin:0;}
+  button.menuBtn{background:#3a3a3a;color:#fff;border:1px solid #666;padding:11px 24px;
+    font-size:15px;cursor:pointer;border-radius:4px;min-width:230px;transition:background .15s;}
+  button.menuBtn:hover{background:#565656;}
+  button.menuBtn:disabled{opacity:0.35;cursor:default;}
+  .settingRow{display:flex;align-items:center;gap:10px;font-size:14px;min-width:280px;
+    justify-content:space-between;}
+  .settingRow input[type=range]{width:150px;}
+  #invGrid{display:grid;grid-template-columns:repeat(9,52px);gap:4px;max-width:500px;}
+  #invGrid .slot{cursor:pointer;}
+  .invHint{font-size:12px;opacity:0.65;max-width:420px;}
+
+  /* ---------- Сетевая игра (Supabase) ---------- */
+  .textInput{background:#1c1c1c;color:#fff;border:1px solid #666;border-radius:4px;
+    padding:7px 10px;font-size:14px;box-sizing:border-box;font-family:inherit;}
+  .textInput::placeholder{color:#888;}
+  #mpPanel{display:flex;flex-direction:column;gap:10px;align-items:stretch;
+    border-top:1px solid rgba(255,255,255,0.15);padding-top:16px;margin-top:2px;min-width:280px;}
+  #mpPanel h3{margin:0;font-size:12px;opacity:0.65;text-transform:uppercase;
+    letter-spacing:1.5px;font-weight:normal;text-align:center;}
+  .mpRow{display:flex;gap:8px;width:100%;}
+  .mpRow input{flex:1;min-width:0;}
+  #mpStatus{font-size:12px;min-height:16px;opacity:0.85;text-align:center;}
+  #roomBadge{position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.5);color:#fff;
+    padding:6px 12px;font-size:12px;border-radius:4px;z-index:10;letter-spacing:0.5px;}
+</style>
+</head>
+<body>
+
+  <!-- ===================== Стартовый экран ===================== -->
+  <div id="startScreen">
+    <h1>VOXELCRAFT</h1>
+    <p>Процедурная воксельная песочница на Three.js. Ломай блоки левой кнопкой мыши,
+    ставь — правой. WASD — движение, Space — прыжок/всплытие, Shift — бег/погружение,
+    E — инвентарь, F3 — отладка, Esc — пауза, колесо мыши / 1‑9 — выбор в хотбаре.</p>
+
+    <div class="settingRow" style="min-width:280px;">
+      <label>Ваш ник</label>
+      <input type="text" id="nickInput" class="textInput" maxlength="16" placeholder="Игрок" style="width:150px;">
+    </div>
+    <button class="menuBtn" id="btnNewGame">Одиночная игра</button>
+    <button class="menuBtn hidden" id="btnContinue">Продолжить</button>
+
+    <div id="mpPanel">
+      <h3>Игра по сети (Supabase)</h3>
+      <button class="menuBtn" id="btnHost">Создать сетевой мир</button>
+      <div class="mpRow">
+        <input type="text" id="joinCodeInput" class="textInput" maxlength="5" placeholder="КОД КОМНАТЫ" style="text-transform:uppercase;">
+        <button class="menuBtn" id="btnJoin" style="min-width:110px;">Войти</button>
+      </div>
+      <div id="mpStatus"></div>
+    </div>
+  </div>
+
+  <!-- ===================== Игровой HUD ===================== -->
+  <div id="crosshair"></div>
+  <div id="hotbar"></div>
+  <div id="debug" class="hidden"></div>
+  <div id="miningBar" class="hidden"><div class="fill"></div></div>
+  <div id="toast" class="hidden"></div>
+  <div id="cursorItem" class="hidden"></div>
+  <div id="roomBadge" class="hidden"></div>
+
+  <!-- ===================== Меню паузы ===================== -->
+  <div id="pauseMenu" class="hidden">
+    <h2 style="margin:0;">Пауза</h2>
+    <button class="menuBtn" id="btnResume">Продолжить</button>
+    <button class="menuBtn" id="btnSave">Сохранить мир</button>
+    <button class="menuBtn" id="btnLoad">Загрузить мир</button>
+    <button class="menuBtn" id="btnNewWorldPause">Новый мир (сбросить)</button>
+    <button class="menuBtn hidden" id="btnLeaveRoom">Покинуть сетевую игру</button>
+    <div class="settingRow"><label>Чувствительность мыши</label>
+      <input type="range" id="sensSlider" min="0.2" max="3" step="0.1" value="1"></div>
+    <div class="settingRow"><label>Громкость звука</label>
+      <input type="range" id="volSlider" min="0" max="1" step="0.05" value="0.4"></div>
+    <div class="settingRow"><label>Дальность прорисовки</label>
+      <input type="range" id="renderDistSlider" min="2" max="6" step="1" value="3"></div>
+    <div class="settingRow"><label>Обзор (FOV)</label>
+      <input type="range" id="fovSlider" min="60" max="110" step="1" value="75"></div>
+  </div>
+
+  <!-- ===================== Экран инвентаря ===================== -->
+  <div id="inventoryScreen" class="hidden">
+    <h2 style="margin:0;">Инвентарь и Создание</h2>
+    <p class="invHint">ЛКМ — взять стек. ПКМ / Боковая кнопка мыши (XButton 5) — взять половину или положить 1 предмет.</p>
+    <div style="display: flex; gap: 30px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 10px;">
+      <!-- Сетка инвентаря -->
+      <div id="invGrid"></div>
+      
+      <!-- Область крафта -->
+      <div style="display: flex; align-items: center; gap: 16px; background: rgba(255,255,255,0.06); padding: 16px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+          <div style="font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;">Крафт 2x2</div>
+          <div id="craftGrid" style="display: grid; grid-template-columns: repeat(2, 52px); gap: 4px;"></div>
+        </div>
+        <div style="font-size: 28px; color: rgba(255,255,255,0.4); margin-top: 10px;">→</div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+          <div style="font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px;">Выход</div>
+          <div id="craftOutputSlot" class="slot" style="cursor: pointer;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+/* =====================================================================================
+   VOXELCRAFT — воксельная песочница в стиле Minecraft
+   ===================================================================================== */
+
+/* ============================== 0. SUPABASE (СЕТЕВАЯ ИГРА) ==============================
+   Вставьте сюда URL и анонимный (anon/public) ключ СВОЕГО проекта Supabase — их выдаёт
+   панель Supabase при создании проекта (Project Settings → Data API → Project URL,
+   и Project Settings → API Keys → anon public). Подробная пошаговая инструкция —
+   в файле SUPABASE_SETUP.md, который идёт вместе с этим файлом.
+   Для анонимного входа нужно включить Anonymous Sign-Ins: Authentication → Sign In / Providers
+   → Anonymous.
+   ========================================================================================= */
+
+const supabaseConfig = {
+  url: "ВСТАВЬТЕ_СЮДА_URL_ПРОЕКТА",   // например: https://xxxxxxxxxxxxxxxx.supabase.co
+  anonKey: "ВСТАВЬТЕ_СЮДА_ANON_KEY"    // Project Settings → API Keys → anon public
+};
+
+let sbClient = null;
+let sbReady = false, sbInitError = null;
+
+function supabaseConfigured(){
+  return !!(supabaseConfig.url && supabaseConfig.url.indexOf('ВСТАВЬТЕ') === -1 &&
+            supabaseConfig.anonKey && supabaseConfig.anonKey.indexOf('ВСТАВЬТЕ') === -1);
+}
+
+const sbReadyPromise = (async () => {
+  if (!supabaseConfigured()){
+    sbInitError = 'Конфигурация Supabase не заполнена (см. SUPABASE_SETUP.md).';
+    return;
+  }
+  try{
+    sbClient = createClient(supabaseConfig.url, supabaseConfig.anonKey);
+    const { error } = await sbClient.auth.signInAnonymously();
+    if (error) throw error;
+    sbReady = true;
+  }catch(e){
+    console.warn('Supabase init error:', e);
+    sbInitError = (e && e.message) ? e.message : String(e);
+    sbReady = false;
+  }
+})();
+
+async function ensureSupabaseReady(){
+  if (sbReady) return true;
+  if (sbInitError && supabaseConfigured()){
+    // Была попытка соединения — она провалилась, повторно инициализировать не пытаемся.
+    setMpStatus('Ошибка Supabase: ' + sbInitError);
+    return false;
+  }
+  if (!supabaseConfigured()){
+    setMpStatus('Supabase не настроен — откройте SUPABASE_SETUP.md и заполните supabaseConfig в начале файла.');
+    return false;
+  }
+  setMpStatus('Подключение к Supabase...');
+  try{ await sbReadyPromise; }catch(e){ /* уже обработано выше */ }
+  if (!sbReady){
+    setMpStatus('Supabase недоступен: ' + (sbInitError || 'неизвестная ошибка'));
+    return false;
+  }
+  return true;
+}
+
+function setMpStatus(text){
+  const el = document.getElementById('mpStatus');
+  if (el) el.textContent = text;
+}
+
+/* ============================== 1. КОНСТАНТЫ И БЛОКИ ============================== */
+
+const CHUNK_SIZE = 16;
+const CHUNK_HEIGHT = 64;
+const SEA_LEVEL = 24;
+const SNOW_LEVEL = 50;
+const GRAVITY = 22;
+const JUMP_SPEED = 7.5;
+
+const BLOCK = {
+  AIR:0, GRASS:1, DIRT:2, STONE:3, SAND:4, WOOD:5, LEAVES:6,
+  WATER:7, COAL_ORE:8, IRON_ORE:9, DIAMOND_ORE:10, SNOW:11, BEDROCK:12, CACTUS:13,
+};
+
+// Рецепты крафта 2х2
+const RECIPES = [
+  {
+    input: [BLOCK.DIRT, BLOCK.DIRT, BLOCK.DIRT, BLOCK.DIRT],
+    output: { id: BLOCK.GRASS, count: 1 }
+  },
+  {
+    input: [BLOCK.STONE, BLOCK.STONE, BLOCK.STONE, BLOCK.STONE],
+    output: { id: BLOCK.BEDROCK, count: 1 }
+  },
+  {
+    input: [BLOCK.SAND, BLOCK.SAND, null, null],
+    output: { id: BLOCK.STONE, count: 1 }
+  },
+  {
+    input: [BLOCK.SAND, null, BLOCK.SAND, null],
+    output: { id: BLOCK.STONE, count: 1 }
+  },
+  {
+    input: [BLOCK.WOOD, null, null, null],
+    output: { id: BLOCK.DIRT, count: 4 }
+  },
+  {
+    input: [BLOCK.LEAVES, BLOCK.LEAVES, BLOCK.LEAVES, BLOCK.LEAVES],
+    output: { id: BLOCK.WOOD, count: 1 }
+  },
+  {
+    input: [BLOCK.COAL_ORE, BLOCK.IRON_ORE, null, null],
+    output: { id: BLOCK.DIAMOND_ORE, count: 1 }
+  },
+  {
+    input: [BLOCK.CACTUS, BLOCK.SAND, null, null],
+    output: { id: BLOCK.DIRT, count: 2 }
+  }
+];
+
+// Атлас текстур
+const ATLAS_COLS = 4, ATLAS_ROWS = 4, ATLAS_CELL_PX = 16;
+const ATLAS_CELLS = {
+  grass_top:[0,0], grass_side:[1,0], dirt:[2,0], stone:[3,0],
+  sand:[0,1], wood_side:[1,1], wood_top:[2,1], leaves:[3,1],
+  water:[0,2], coal_ore:[1,2], iron_ore:[2,2], diamond_ore:[3,2],
+  snow_top:[0,3], bedrock:[1,3], cactus_side:[2,3], cactus_top:[3,3],
+};
+
+const BLOCK_DEF = {
+  [BLOCK.AIR]:    { name:'air' },
+  [BLOCK.GRASS]:  { name:'Трава', solid:true, hardness:0.6, drop:BLOCK.DIRT,
+                    faces:{top:'grass_top', bottom:'dirt', side:'grass_side'} },
+  [BLOCK.DIRT]:   { name:'Земля', solid:true, hardness:0.5, faces:{all:'dirt'} },
+  [BLOCK.STONE]:  { name:'Камень', solid:true, hardness:1.5, faces:{all:'stone'} },
+  [BLOCK.SAND]:   { name:'Песок', solid:true, hardness:0.5, faces:{all:'sand'} },
+  [BLOCK.WOOD]:   { name:'Древесина', solid:true, hardness:1.0,
+                    faces:{top:'wood_top', bottom:'wood_top', side:'wood_side'} },
+  [BLOCK.LEAVES]: { name:'Листва', solid:true, hardness:0.2, faces:{all:'leaves'} },
+  [BLOCK.WATER]:  { name:'Вода', solid:false, faces:{all:'water'} },
+  [BLOCK.COAL_ORE]:   { name:'Угольная руда', solid:true, hardness:1.5, faces:{all:'coal_ore'} },
+  [BLOCK.IRON_ORE]:   { name:'Железная руда', solid:true, hardness:2.0, faces:{all:'iron_ore'} },
+  [BLOCK.DIAMOND_ORE]:{ name:'Алмазная руда', solid:true, hardness:3.0, faces:{all:'diamond_ore'} },
+  [BLOCK.SNOW]:   { name:'Снег', solid:true, hardness:0.5, faces:{all:'snow_top'} },
+  [BLOCK.BEDROCK]:{ name:'Бедрок', solid:true, unbreakable:true, faces:{all:'bedrock'} },
+  [BLOCK.CACTUS]: { name:'Кактус', solid:true, hardness:0.8,
+                    faces:{top:'cactus_top', bottom:'cactus_top', side:'cactus_side'} },
+};
+
+const BIOMES = {
+  plains:    { name:'Равнина', amplitude:4,  baseOffset:0,  surface:BLOCK.GRASS, subsurface:BLOCK.DIRT,
+               tree:true, treeChance:0.006, cactus:false },
+  forest:    { name:'Лес',     amplitude:6,  baseOffset:1,  surface:BLOCK.GRASS, subsurface:BLOCK.DIRT,
+               tree:true, treeChance:0.05,  cactus:false },
+  desert:    { name:'Пустыня', amplitude:3,  baseOffset:-2, surface:BLOCK.SAND,  subsurface:BLOCK.SAND,
+               tree:false, cactus:true, cactusChance:0.01 },
+  mountains: { name:'Горы',    amplitude:22, baseOffset:10, surface:BLOCK.STONE, subsurface:BLOCK.STONE,
+               tree:false, cactus:false },
+};
+
+function isOpaqueBlock(id){ return id !== BLOCK.AIR && id !== BLOCK.WATER; }
+function getFaceCell(def, key){
+  if (def.faces.all) return def.faces.all;
+  if (key === 'top') return def.faces.top;
+  if (key === 'bottom') return def.faces.bottom;
+  return def.faces.side;
+}
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+
+/* ============================== 2. ШУМ ПЕРЛИНА (fBm) ============================== */
+
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hash3(x, y, z, seed){
+  let h = (seed ^ (x*374761393) ^ (y*668265263) ^ (z*2147483647)) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  h = h ^ (h >>> 16);
+  return ((h >>> 0) % 1000000) / 1000000;
+}
+
+class PerlinNoise2D {
+  constructor(seed = 1337){
+    const p = new Uint8Array(256);
+    for (let i=0;i<256;i++) p[i]=i;
+    const rand = mulberry32(seed);
+    for (let i=255;i>0;i--){
+      const j = Math.floor(rand()*(i+1));
+      const tmp = p[i]; p[i]=p[j]; p[j]=tmp;
+    }
+    this.perm = new Uint8Array(512);
+    for (let i=0;i<512;i++) this.perm[i]=p[i & 255];
+  }
+  static fade(t){ return t*t*t*(t*(t*6-15)+10); }
+  static lerp(t,a,b){ return a+t*(b-a); }
+  static grad(hash,x,y){
+    const h = hash & 7;
+    const u = h<4 ? x : y;
+    const v = h<4 ? y : x;
+    return ((h&1) ? -u : u) + ((h&2) ? -2*v : 2*v);
+  }
+  noise(x,y){
+    const X = Math.floor(x)&255, Y = Math.floor(y)&255;
+    x -= Math.floor(x); y -= Math.floor(y);
+    const u = PerlinNoise2D.fade(x), v = PerlinNoise2D.fade(y);
+    const p = this.perm;
+    const aa=p[X+p[Y]], ab=p[X+p[Y+1]], ba=p[X+1+p[Y]], bb=p[X+1+p[Y+1]];
+    const g1 = PerlinNoise2D.lerp(u, PerlinNoise2D.grad(aa,x,y),   PerlinNoise2D.grad(ba,x-1,y));
+    const g2 = PerlinNoise2D.lerp(u, PerlinNoise2D.grad(ab,x,y-1), PerlinNoise2D.grad(bb,x-1,y-1));
+    return PerlinNoise2D.lerp(v, g1, g2);
+  }
+  fbm(x,y,octaves=4,persistence=0.5,lacunarity=2.0){
+    let total=0, amp=1, freq=1, maxAmp=0;
+    for (let i=0;i<octaves;i++){
+      total += this.noise(x*freq,y*freq)*amp;
+      maxAmp += amp; amp*=persistence; freq*=lacunarity;
+    }
+    return total/maxAmp;
+  }
+}
+
+/* ============================== 3. ПРОЦЕДУРНЫЕ ТЕКСТУРЫ ============================== */
+
+function speckleFill(ctx, rng, size, base, variants){
+  for (let y=0;y<size;y++){
+    for (let x=0;x<size;x++){
+      let c = base;
+      if (rng() < 0.35) c = variants[Math.floor(rng()*variants.length)];
+      const jitter = (rng()-0.5)*8;
+      ctx.fillStyle = `hsl(${c[0]}, ${c[1]}%, ${clamp(c[2]+jitter,5,95)}%)`;
+      ctx.fillRect(x,y,1,1);
+    }
+  }
+}
+
+function createAtlasTexture(){
+  const S = ATLAS_CELL_PX;
+  const canvas = document.createElement('canvas');
+  canvas.width = S*ATLAS_COLS; canvas.height = S*ATLAS_ROWS;
+  const ctx = canvas.getContext('2d');
+  const rng = mulberry32(42);
+
+  const draw = (name, fn) => {
+    const [col,row] = ATLAS_CELLS[name];
+    ctx.save(); ctx.translate(col*S, row*S); fn(ctx, rng, S); ctx.restore();
+  };
+
+  draw('grass_top', (c,r,s)=>speckleFill(c,r,s,[100,45,32],[[100,55,40],[95,40,26],[110,50,36]]));
+  draw('grass_side', (c,r,s)=>{
+    const edge = Math.floor(s*0.35);
+    for (let y=0;y<s;y++) for (let x=0;x<s;x++){
+      const localEdge = edge + Math.floor((r()-0.5)*2);
+      const isGrass = y < localEdge;
+      const h = isGrass?100:28, sat = isGrass?45:35, l = 28+(r()*10-5);
+      c.fillStyle = `hsl(${h},${sat}%,${clamp(l,10,90)}%)`;
+      c.fillRect(x,y,1,1);
+    }
+  });
+  draw('dirt',  (c,r,s)=>speckleFill(c,r,s,[28,35,32],[[25,30,26],[30,40,38]]));
+  draw('stone', (c,r,s)=>speckleFill(c,r,s,[0,0,50],[[0,0,44],[0,0,58],[210,10,48]]));
+  draw('sand',  (c,r,s)=>speckleFill(c,r,s,[45,55,72],[[45,60,78],[42,50,66]]));
+  draw('wood_side', (c,r,s)=>{
+    for (let y=0;y<s;y++) for (let x=0;x<s;x++){
+      const stripe = (x + Math.floor(r()*2)) % 4 < 1;
+      c.fillStyle = `hsl(28,45%,${(stripe?30:42)+(r()*6-3)}%)`;
+      c.fillRect(x,y,1,1);
+    }
+  });
+  draw('wood_top', (c,r,s)=>{
+    const cx=s/2, cy=s/2;
+    for (let y=0;y<s;y++) for (let x=0;x<s;x++){
+      const d = Math.hypot(x-cx,y-cy);
+      const ring = Math.floor(d*1.5)%3===0;
+      c.fillStyle = `hsl(30,42%,${(ring?32:45)+(r()*6-3)}%)`;
+      c.fillRect(x,y,1,1);
+    }
+  });
+  draw('leaves', (c,r,s)=>speckleFill(c,r,s,[110,45,26],[[110,55,34],[105,40,20]]));
+  draw('water',  (c,r,s)=>{
+    for (let y=0;y<s;y++) for (let x=0;x<s;x++){
+      const wave = Math.sin((x+y)*0.8+r())*4;
+      c.fillStyle = `hsla(205,65%,${clamp(45+wave,30,60)}%,0.85)`;
+      c.fillRect(x,y,1,1);
+    }
+  });
+  const oreBase = (c,r,s,dotColor,dots)=>{
+    speckleFill(c,r,s,[0,0,50],[[0,0,44],[0,0,58]]);
+    for (let i=0;i<dots;i++){
+      const x=Math.floor(r()*s), y=Math.floor(r()*s);
+      c.fillStyle = dotColor; c.fillRect(x,y,2,2);
+    }
+  };
+  draw('coal_ore',    (c,r,s)=>oreBase(c,r,s,'hsl(0,0%,8%)',6));
+  draw('iron_ore',    (c,r,s)=>oreBase(c,r,s,'hsl(25,55%,68%)',6));
+  draw('diamond_ore', (c,r,s)=>oreBase(c,r,s,'hsl(180,70%,65%)',5));
+  draw('snow_top',    (c,r,s)=>speckleFill(c,r,s,[200,15,92],[[0,0,98],[200,20,88]]));
+  draw('bedrock',     (c,r,s)=>speckleFill(c,r,s,[0,0,20],[[0,0,12],[0,0,28]]));
+  draw('cactus_side', (c,r,s)=>speckleFill(c,r,s,[125,50,28],[[125,55,34],[120,45,22]]));
+  draw('cactus_top',  (c,r,s)=>speckleFill(c,r,s,[125,55,32],[[125,60,38]]));
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.flipY = false;
+  tex.generateMipmaps = false;
+  return { texture: tex, canvas };
+}
+
+function getUVsForCell(cellName){
+  const [col,row] = ATLAS_CELLS[cellName];
+  const u0=col/ATLAS_COLS, v0=row/ATLAS_ROWS;
+  return { u0, v0, u1:u0+1/ATLAS_COLS, v1:v0+1/ATLAS_ROWS };
+}
+
+function buildBlockIconURLs(atlasCanvas){
+  const urls = {};
+  for (const idStr in BLOCK_DEF){
+    const id = +idStr;
+    if (id === BLOCK.AIR) continue;
+    const def = BLOCK_DEF[id];
+    const cellName = def.faces.all || def.faces.top || def.faces.side;
+    const [col,row] = ATLAS_CELLS[cellName];
+    const c = document.createElement('canvas'); c.width=32; c.height=32;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(atlasCanvas, col*ATLAS_CELL_PX, row*ATLAS_CELL_PX, ATLAS_CELL_PX, ATLAS_CELL_PX, 0,0,32,32);
+    urls[id] = c.toDataURL();
+  }
+  return urls;
+}
+
+/* ============================== 4. CHUNK / WORLD ============================== */
+
+class Chunk {
+  constructor(cx, cz){
+    this.cx = cx; this.cz = cz;
+    this.blocks = new Uint8Array(CHUNK_SIZE*CHUNK_HEIGHT*CHUNK_SIZE);
+    this.mesh = null; this.waterMesh = null;
+    this.edits = null;
+    this.biome = null;
+  }
+  idx(lx,ly,lz){ return lx + lz*CHUNK_SIZE + ly*CHUNK_SIZE*CHUNK_SIZE; }
+  getLocal(lx,ly,lz){
+    if (lx<0||lx>=CHUNK_SIZE||lz<0||lz>=CHUNK_SIZE||ly<0||ly>=CHUNK_HEIGHT) return BLOCK.AIR;
+    return this.blocks[this.idx(lx,ly,lz)];
+  }
+  setLocal(lx,ly,lz,id){ this.blocks[this.idx(lx,ly,lz)] = id; }
+}
+
+class World {
+  constructor(seed){
+    this.seed = seed;
+    this.heightNoise = new PerlinNoise2D(seed);
+    this.biomeNoise  = new PerlinNoise2D(seed + 9999);
+    this.detailNoise = new PerlinNoise2D(seed + 5555);
+    this.chunks = new Map();
+    this.persistedEdits = new Map();
+    this.loadQueue = [];
+    this.dirty = new Set();
+  }
+  key(cx,cz){ return cx+','+cz; }
+  getChunk(cx,cz){ return this.chunks.get(this.key(cx,cz)); }
+
+  getBlock(x,y,z){
+    if (y<0||y>=CHUNK_HEIGHT) return BLOCK.AIR;
+    const cx=Math.floor(x/CHUNK_SIZE), cz=Math.floor(z/CHUNK_SIZE);
+    const c = this.getChunk(cx,cz);
+    if (!c) return BLOCK.AIR;
+    return c.getLocal(x-cx*CHUNK_SIZE, y, z-cz*CHUNK_SIZE);
+  }
+  isSolid(x,y,z){
+    const id = this.getBlock(Math.floor(x),Math.floor(y),Math.floor(z));
+    const d = BLOCK_DEF[id];
+    return !!(d && d.solid);
+  }
+  setBlock(x,y,z,id,opts){
+    const playerEdit = !opts || opts.playerEdit !== false;
+    const cx=Math.floor(x/CHUNK_SIZE), cz=Math.floor(z/CHUNK_SIZE);
+    const c = this.getChunk(cx,cz);
+    if (!c) return false;
+    const lx=x-cx*CHUNK_SIZE, lz=z-cz*CHUNK_SIZE;
+    c.setLocal(lx,y,lz,id);
+    if (playerEdit){
+      if (!c.edits) c.edits = {};
+      c.edits[lx+','+y+','+lz] = id;
+    }
+    this.dirty.add(this.key(cx,cz));
+    if (lx===0) this.dirty.add(this.key(cx-1,cz));
+    if (lx===CHUNK_SIZE-1) this.dirty.add(this.key(cx+1,cz));
+    if (lz===0) this.dirty.add(this.key(cx,cz-1));
+    if (lz===CHUNK_SIZE-1) this.dirty.add(this.key(cx,cz+1));
+    return true;
+  }
+
+  getBiome(wx,wz){
+    const t = this.biomeNoise.fbm(wx*0.004, wz*0.004, 3, 0.5, 2.0);
+    if (t < -0.35) return BIOMES.desert;
+    if (t < 0.05)  return BIOMES.plains;
+    if (t < 0.45)  return BIOMES.forest;
+    return BIOMES.mountains;
+  }
+  getHeight(wx,wz,biome){
+    const base = this.heightNoise.fbm(wx*0.01, wz*0.01, 4, 0.5, 2.0);
+    const detail = this.detailNoise.fbm(wx*0.05, wz*0.05, 2, 0.5, 2.0) * 0.15;
+    const h = SEA_LEVEL + Math.round((base+detail) * biome.amplitude) + biome.baseOffset;
+    return clamp(h, 1, CHUNK_HEIGHT-10);
+  }
+
+  generateChunkTerrain(chunk){
+    const {cx,cz} = chunk;
+    for (let lz=0; lz<CHUNK_SIZE; lz++){
+      for (let lx=0; lx<CHUNK_SIZE; lx++){
+        const wx = cx*CHUNK_SIZE+lx, wz = cz*CHUNK_SIZE+lz;
+        const biome = this.getBiome(wx,wz);
+        const height = this.getHeight(wx,wz,biome);
+        chunk.biome = biome.name;
+        for (let y=0;y<CHUNK_HEIGHT;y++){
+          let id;
+          if (y===0) id = BLOCK.BEDROCK;
+          else if (y<height-4) id = BLOCK.STONE;
+          else if (y<height) id = biome.subsurface;
+          else if (y===height) id = (height>=SNOW_LEVEL) ? BLOCK.SNOW : biome.surface;
+          else if (y<=SEA_LEVEL && height<SEA_LEVEL) id = BLOCK.WATER;
+          else id = BLOCK.AIR;
+
+          if (id === BLOCK.STONE){
+            const depth = height - y;
+            const r = hash3(wx,y,wz,this.seed);
+            if (depth>18 && r<0.0018) id = BLOCK.DIAMOND_ORE;
+            else if (depth>8 && r<0.006) id = BLOCK.IRON_ORE;
+            else if (depth>3 && r<0.010) id = BLOCK.COAL_ORE;
+          }
+          chunk.setLocal(lx,y,lz,id);
+        }
+        if (biome.tree && height>SEA_LEVEL){
+          if (hash3(wx,0,wz,this.seed+777) < biome.treeChance) this.placeTree(chunk,lx,height+1,lz);
+        }
+        if (biome.cactus && height>SEA_LEVEL){
+          if (hash3(wx,1,wz,this.seed+888) < biome.cactusChance){
+            const h = 1 + Math.floor(hash3(wx,2,wz,this.seed+889)*2);
+            for (let i=0;i<h;i++) if (height+1+i<CHUNK_HEIGHT) chunk.setLocal(lx,height+1+i,lz,BLOCK.CACTUS);
+          }
+        }
+      }
+    }
+  }
+  placeTree(chunk, lx, ly, lz){
+    if (lx<2||lx>CHUNK_SIZE-3||lz<2||lz>CHUNK_SIZE-3) return;
+    const trunk = 4 + (hash3(chunk.cx*1000+lx, ly, chunk.cz*1000+lz, this.seed+11) < 0.5 ? 0 : 1);
+    for (let i=0;i<trunk;i++) if (ly+i<CHUNK_HEIGHT) chunk.setLocal(lx,ly+i,lz,BLOCK.WOOD);
+    const top = ly+trunk;
+    for (let dx=-2;dx<=2;dx++) for (let dz=-2;dz<=2;dz++) for (let dy=-2;dy<=1;dy++){
+      if (Math.abs(dx)+Math.abs(dz)+Math.abs(dy) > 3) continue;
+      const y = top+dy;
+      if (y<0||y>=CHUNK_HEIGHT) continue;
+      if (chunk.getLocal(lx+dx,y,lz+dz) === BLOCK.AIR) chunk.setLocal(lx+dx,y,lz+dz,BLOCK.LEAVES);
+    }
+  }
+
+  loadChunk(cx,cz){
+    if (this.chunks.has(this.key(cx,cz))) return;
+    const chunk = new Chunk(cx,cz);
+    this.generateChunkTerrain(chunk);
+    const saved = this.persistedEdits.get(this.key(cx,cz));
+    if (saved){
+      chunk.edits = saved;
+      for (const k in saved){
+        const [lx,ly,lz] = k.split(',').map(Number);
+        chunk.setLocal(lx,ly,lz,saved[k]);
+      }
+    }
+    this.chunks.set(this.key(cx,cz), chunk);
+    this.dirty.add(this.key(cx,cz));
+    this.dirty.add(this.key(cx-1,cz)); this.dirty.add(this.key(cx+1,cz));
+    this.dirty.add(this.key(cx,cz-1)); this.dirty.add(this.key(cx,cz+1));
+  }
+  unloadChunk(chunk, scene){
+    if (chunk.edits) this.persistedEdits.set(this.key(chunk.cx,chunk.cz), chunk.edits);
+    if (chunk.mesh){ scene.remove(chunk.mesh); chunk.mesh.geometry.dispose(); }
+    if (chunk.waterMesh){ scene.remove(chunk.waterMesh); chunk.waterMesh.geometry.dispose(); }
+    this.chunks.delete(this.key(chunk.cx,chunk.cz));
+  }
+  updateChunks(px,pz,renderDistance,scene){
+    const pcx=Math.floor(px/CHUNK_SIZE), pcz=Math.floor(pz/CHUNK_SIZE);
+    const needed = new Set();
+    for (let dx=-renderDistance; dx<=renderDistance; dx++){
+      for (let dz=-renderDistance; dz<=renderDistance; dz++){
+        if (dx*dx+dz*dz > renderDistance*renderDistance+1) continue;
+        const cx=pcx+dx, cz=pcz+dz, key=this.key(cx,cz);
+        needed.add(key);
+        if (!this.chunks.has(key) && !this.loadQueue.some(q=>q.cx===cx&&q.cz===cz)){
+          this.loadQueue.push({cx,cz,dist:dx*dx+dz*dz});
+        }
+      }
+    }
+    this.loadQueue.sort((a,b)=>a.dist-b.dist);
+    for (const [key,chunk] of Array.from(this.chunks)){
+      if (!needed.has(key)) this.unloadChunk(chunk, scene);
+    }
+  }
+  processLoadQueue(budget=2){
+    for (let i=0;i<budget && this.loadQueue.length>0;i++){
+      const {cx,cz} = this.loadQueue.shift();
+      this.loadChunk(cx,cz);
+    }
+  }
+  processDirty(scene, materials, budget=2){
+    let n=0;
+    for (const key of Array.from(this.dirty)){
+      if (n>=budget) break;
+      this.dirty.delete(key);
+      const chunk = this.chunks.get(key);
+      if (!chunk) continue;
+      this.remeshChunk(chunk, scene, materials);
+      n++;
+    }
+  }
+  remeshChunk(chunk, scene, materials){
+    if (chunk.mesh){ scene.remove(chunk.mesh); chunk.mesh.geometry.dispose(); }
+    if (chunk.waterMesh){ scene.remove(chunk.waterMesh); chunk.waterMesh.geometry.dispose(); }
+    const { opaqueGeo, waterGeo } = buildChunkMesh(this, chunk);
+    chunk.mesh = opaqueGeo ? new THREE.Mesh(opaqueGeo, materials.opaque) : null;
+    if (chunk.mesh) scene.add(chunk.mesh);
+    chunk.waterMesh = waterGeo ? new THREE.Mesh(waterGeo, materials.water) : null;
+    if (chunk.waterMesh) scene.add(chunk.waterMesh);
+  }
+}
+
+/* ============================== 5. МЕШИНГ ЧАНКОВ ============================== */
+
+const FACES = [
+  { key:'top',    dir:[0,1,0],  u:[1,0,0],  v:[0,0,-1] },
+  { key:'bottom', dir:[0,-1,0], u:[1,0,0],  v:[0,0,1]  },
+  { key:'south',  dir:[0,0,1],  u:[1,0,0],  v:[0,1,0]  },
+  { key:'north',  dir:[0,0,-1], u:[-1,0,0], v:[0,1,0]  },
+  { key:'east',   dir:[1,0,0],  u:[0,0,-1], v:[0,1,0]  },
+  { key:'west',   dir:[-1,0,0], u:[0,0,1],  v:[0,1,0]  },
+];
+const AO_LEVELS = [0.35, 0.55, 0.75, 1.0];
+const CORNERS = [[-1,-1],[1,-1],[1,1],[-1,1]];
+
+function buildChunkMesh(world, chunk){
+  const oPos=[], oNorm=[], oUV=[], oCol=[], oIdx=[]; let oi=0;
+  const wPos=[], wNorm=[], wUV=[], wCol=[], wIdx=[]; let wi=0;
+
+  for (let ly=0; ly<CHUNK_HEIGHT; ly++){
+    for (let lz=0; lz<CHUNK_SIZE; lz++){
+      for (let lx=0; lx<CHUNK_SIZE; lx++){
+        const id = chunk.getLocal(lx,ly,lz);
+        if (id === BLOCK.AIR) continue;
+        const def = BLOCK_DEF[id];
+        const isWater = id === BLOCK.WATER;
+        const wx = chunk.cx*CHUNK_SIZE+lx, wy = ly, wz = chunk.cz*CHUNK_SIZE+lz;
+
+        for (const face of FACES){
+          const nx=wx+face.dir[0], ny=wy+face.dir[1], nz=wz+face.dir[2];
+          const neighbor = world.getBlock(nx,ny,nz);
+          const visible = isWater ? (neighbor===BLOCK.AIR) : !isOpaqueBlock(neighbor);
+          if (!visible) continue;
+
+          const cellName = getFaceCell(def, face.key);
+          const { u0,v0,u1,v1 } = getUVsForCell(cellName);
+          const base = isWater ? wi : oi;
+
+          for (const [uS,vS] of CORNERS){
+            const px = wx+0.5 + 0.5*face.dir[0] + face.u[0]*uS*0.5 + face.v[0]*vS*0.5;
+            const py = wy+0.5 + 0.5*face.dir[1] + face.u[1]*uS*0.5 + face.v[1]*vS*0.5;
+            const pz = wz+0.5 + 0.5*face.dir[2] + face.u[2]*uS*0.5 + face.v[2]*vS*0.5;
+            const uu = uS<0?u0:u1, vv = vS<0?v1:v0;
+
+            let bright = 1.0;
+            if (!isWater){
+              const s1x=nx+face.u[0]*uS, s1y=ny+face.u[1]*uS, s1z=nz+face.u[2]*uS;
+              const s2x=nx+face.v[0]*vS, s2y=ny+face.v[1]*vS, s2z=nz+face.v[2]*vS;
+              const cxo=nx+face.u[0]*uS+face.v[0]*vS, cyo=ny+face.u[1]*uS+face.v[1]*vS, czo=nz+face.u[2]*uS+face.v[2]*vS;
+              const s1 = isOpaqueBlock(world.getBlock(s1x,s1y,s1z)) ? 1:0;
+              const s2 = isOpaqueBlock(world.getBlock(s2x,s2y,s2z)) ? 1:0;
+              const co = isOpaqueBlock(world.getBlock(cxo,cyo,czo)) ? 1:0;
+              const aoVal = (s1&&s2) ? 0 : (3-(s1+s2+co));
+              bright = AO_LEVELS[aoVal];
+            }
+
+            if (isWater){ wPos.push(px,py,pz); wNorm.push(face.dir[0],face.dir[1],face.dir[2]); wUV.push(uu,vv); wCol.push(bright,bright,bright); }
+            else { oPos.push(px,py,pz); oNorm.push(face.dir[0],face.dir[1],face.dir[2]); oUV.push(uu,vv); oCol.push(bright,bright,bright); }
+          }
+          if (isWater){ wIdx.push(base,base+1,base+2, base,base+2,base+3); wi+=4; }
+          else { oIdx.push(base,base+1,base+2, base,base+2,base+3); oi+=4; }
+        }
+      }
+    }
+  }
+
+  const makeGeo = (pos,norm,uv,col,idx) => {
+    if (pos.length===0) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('normal',   new THREE.Float32BufferAttribute(norm,3));
+    g.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,2));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(col,3));
+    g.setIndex(idx);
+    return g;
+  };
+  return { opaqueGeo: makeGeo(oPos,oNorm,oUV,oCol,oIdx), waterGeo: makeGeo(wPos,wNorm,wUV,wCol,wIdx) };
+}
+
+/* ============================== 6. ИГРОК: ФИЗИКА И КОЛЛИЗИИ ============================== */
+
+class Player {
+  constructor(world){
+    this.world = world;
+    this.position = new THREE.Vector3(0.5, 60, 0.5);
+    this.velocity = new THREE.Vector3();
+    this.halfWidth = 0.3; this.height = 1.8; this.eyeHeight = 1.62;
+    this.grounded = false; this.inWater = false; this.sprinting = false;
+  }
+  getAABB(pos){
+    return { minX:pos.x-this.halfWidth, maxX:pos.x+this.halfWidth,
+      minY:pos.y, maxY:pos.y+this.height,
+      minZ:pos.z-this.halfWidth, maxZ:pos.z+this.halfWidth };
+  }
+  collidesAt(pos){
+    const b = this.getAABB(pos);
+    const minX=Math.floor(b.minX), maxX=Math.floor(b.maxX);
+    const minY=Math.floor(b.minY), maxY=Math.floor(b.maxY);
+    const minZ=Math.floor(b.minZ), maxZ=Math.floor(b.maxZ);
+    for (let x=minX;x<=maxX;x++)
+      for (let y=minY;y<=maxY;y++)
+        for (let z=minZ;z<=maxZ;z++)
+          if (this.world.isSolid(x,y,z)) return true;
+    return false;
+  }
+  update(dt, input){
+    const eyeB = this.world.getBlock(Math.floor(this.position.x), Math.floor(this.position.y+this.eyeHeight), Math.floor(this.position.z));
+    const feetB = this.world.getBlock(Math.floor(this.position.x), Math.floor(this.position.y+0.2), Math.floor(this.position.z));
+    this.inWater = (eyeB===BLOCK.WATER || feetB===BLOCK.WATER);
+
+    const speed = this.inWater ? 3.2 : (this.sprinting ? 7.0 : 4.3);
+    const wish = new THREE.Vector3();
+    if (input.forward) wish.add(input.forwardDir);
+    if (input.back) wish.sub(input.forwardDir);
+    if (input.right) wish.add(input.rightDir);
+    if (input.left) wish.sub(input.rightDir);
+    if (wish.lengthSq()>0) wish.normalize().multiplyScalar(speed);
+    this.velocity.x = wish.x; this.velocity.z = wish.z;
+
+    if (this.inWater){
+      this.velocity.y -= GRAVITY*0.25*dt;
+      this.velocity.y = Math.max(this.velocity.y, -3.5);
+      if (input.jump) this.velocity.y = 3.2;
+      else if (input.crouch) this.velocity.y = -3.2;
+      else this.velocity.y *= 0.9;
+    } else {
+      this.velocity.y -= GRAVITY*dt;
+      if (this.velocity.y < -30) this.velocity.y = -30;
+      if (input.jump && this.grounded) this.velocity.y = JUMP_SPEED;
+    }
+
+    this.moveAxis('x', this.velocity.x*dt);
+    this.moveAxis('y', this.velocity.y*dt);
+    this.moveAxis('z', this.velocity.z*dt);
+
+    const probe = this.position.clone(); probe.y -= 0.05;
+    this.grounded = this.collidesAt(probe);
+  }
+  moveAxis(axis, delta){
+    if (delta===0) return;
+    const next = this.position.clone(); next[axis]+=delta;
+    if (!this.collidesAt(next)){ this.position.copy(next); return; }
+    this.velocity[axis] = 0;
+    let lo=0, hi=delta;
+    for (let i=0;i<6;i++){
+      const mid=(lo+hi)/2;
+      const test=this.position.clone(); test[axis]+=mid;
+      if (!this.collidesAt(test)) lo=mid; else hi=mid;
+    }
+    const finalPos = this.position.clone(); finalPos[axis]+=lo;
+    this.position.copy(finalPos);
+  }
+}
+
+/* ============================== 7. РЕЙКАСТИНГ ПО ВОКСЕЛЯМ ============================== */
+
+function isTargetable(id){ return id!==BLOCK.AIR && id!==BLOCK.WATER; }
+
+function raycastVoxels(world, origin, dir, maxDist=6, step=0.04){
+  let prev=null;
+  const p = origin.clone();
+  for (let t=0;t<maxDist;t+=step){
+    p.copy(origin).addScaledVector(dir,t);
+    const bx=Math.floor(p.x), by=Math.floor(p.y), bz=Math.floor(p.z);
+    const id = world.getBlock(bx,by,bz);
+    if (isTargetable(id)){
+      let normal=[0,1,0];
+      if (prev) normal=[prev[0]-bx, prev[1]-by, prev[2]-bz];
+      return { block:[bx,by,bz], normal, place:[bx+normal[0],by+normal[1],bz+normal[2]], id };
+    }
+    prev=[bx,by,bz];
+  }
+  return null;
+}
+
+/* ============================== 8. ИНИЦИАЛИЗАЦИЯ СЦЕНЫ ============================== */
+
+const settings = { sensitivity:1.0, volume:0.4, renderDistance:3, fov:75 };
+const SETTINGS_KEY = 'voxelcraft_settings_v1';
+const NICK_KEY = 'voxelcraft_nick_v1';
+
+function loadSettingsFromStorage(){
+  try{
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw){
+      const s = JSON.parse(raw);
+      if (typeof s.sensitivity==='number') settings.sensitivity = s.sensitivity;
+      if (typeof s.volume==='number') settings.volume = s.volume;
+      if (typeof s.renderDistance==='number') settings.renderDistance = s.renderDistance;
+      if (typeof s.fov==='number') settings.fov = s.fov;
+    }
+  }catch(e){ /* игнорируем повреждённые настройки */ }
+}
+function saveSettingsToStorage(){
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }catch(e){ /* нет доступа к localStorage */ }
+}
+loadSettingsFromStorage();
+
+function applySettingsToUI(){
+  const sens = document.getElementById('sensSlider'); if (sens) sens.value = settings.sensitivity;
+  const vol = document.getElementById('volSlider'); if (vol) vol.value = settings.volume;
+  const rd = document.getElementById('renderDistSlider'); if (rd) rd.value = settings.renderDistance;
+  const fov = document.getElementById('fovSlider'); if (fov) fov.value = settings.fov;
+}
+applySettingsToUI();
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x9ad6f0, 24, CHUNK_SIZE*(settings.renderDistance+1));
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+scene.add(sunLight); scene.add(sunLight.target);
+
+const camera = new THREE.PerspectiveCamera(settings.fov, innerWidth/innerHeight, 0.08, 800);
+const yawObject = new THREE.Object3D();
+yawObject.add(camera);
+scene.add(yawObject);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+window.addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const { texture: atlasTexture, canvas: atlasCanvas } = createAtlasTexture();
+const materials = {
+  opaque: new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors:true, side:THREE.DoubleSide }),
+  water:  new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors:true, transparent:true, opacity:0.75, side:THREE.DoubleSide, depthWrite:false }),
+};
+const iconURLs = buildBlockIconURLs(atlasCanvas);
+
+function createStars(){
+  const positions = [];
+  for (let i=0;i<600;i++){
+    const theta=Math.random()*Math.PI*2, phi=Math.acos(2*Math.random()-1), r=400;
+    positions.push(r*Math.sin(phi)*Math.cos(theta), Math.abs(r*Math.cos(phi))+50, r*Math.sin(phi)*Math.sin(theta));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  const m = new THREE.PointsMaterial({ color:0xffffff, size:2, transparent:true, opacity:0.8, depthWrite:false });
+  return new THREE.Points(g,m);
+}
+const stars = createStars();
+scene.add(stars);
+
+const highlightGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002,1.002,1.002));
+const highlightBox = new THREE.LineSegments(highlightGeo, new THREE.LineBasicMaterial({ color:0x000000 }));
+highlightBox.visible = false;
+scene.add(highlightBox);
+
+/* ============================== СОСТОЯНИЕ ИГРЫ ============================== */
+
+let world = null;
+const player = new Player(null);
+let inventory = new Array(36).fill(null);
+let craftInput = new Array(4).fill(null);
+let craftOutput = null;
+let selectedSlot = 0;
+let worldTime = 0.3;
+
+let gameStarted = false, paused = false, inventoryOpen = false, locked = false, debugVisible = false;
+let carriedItem = null; // Предмет, зажатый на курсоре: { id, count }
+let miningKey = null, miningProgress = 0;
+
+/* ============================== 9. ДЕНЬ / НОЧЬ ============================== */
+
+const DAY_LENGTH = 240;
+const skyDay = new THREE.Color(0x9ad6f0), skyNight = new THREE.Color(0x040611), skyDusk = new THREE.Color(0xff9a56);
+
+function updateDayNight(dt){
+  worldTime += dt/DAY_LENGTH; if (worldTime>=1) worldTime-=1;
+  const angle = worldTime*Math.PI*2 - Math.PI/2;
+  const sunHeight = Math.sin(angle);
+  sunLight.position.set(Math.cos(angle)*100, sunHeight*100+5, 40);
+  sunLight.target.position.set(player.position.x, player.position.y, player.position.z);
+
+  const dayFactor = clamp(sunHeight,0,1);
+  const duskFactor = clamp(1-Math.abs(sunHeight)*2.2,0,1);
+  let sky = skyNight.clone().lerp(skyDay, clamp(dayFactor*1.4,0,1));
+  sky.lerp(skyDusk, duskFactor*0.45*clamp(1-dayFactor,0,1));
+  scene.background = sky;
+  scene.fog.color = sky;
+  scene.fog.far = CHUNK_SIZE*(settings.renderDistance+1);
+
+  sunLight.intensity = 0.15 + Math.max(0,sunHeight)*0.9;
+  sunLight.color.lerpColors(new THREE.Color(0x88aaff), new THREE.Color(0xffffff), dayFactor);
+  ambientLight.intensity = 0.25 + Math.max(0,sunHeight)*0.35;
+  stars.visible = sunHeight < 0.05;
+  stars.material.opacity = clamp(1-dayFactor*3,0,0.85);
+}
+
+/* ============================== 10. ЗВУК (Web Audio, без файлов) ============================== */
+
+let audioCtx=null, masterGain=null;
+function initAudio(){
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  masterGain = audioCtx.createGain(); masterGain.gain.value = settings.volume;
+  masterGain.connect(audioCtx.destination);
+}
+function playNoiseBurst(duration, freq){
+  if (!audioCtx) return;
+  const buffer = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate*duration), audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i=0;i<data.length;i++) data[i] = (Math.random()*2-1)*(1-i/data.length);
+  const src = audioCtx.createBufferSource(); src.buffer = buffer;
+  const filter = audioCtx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.value = freq;
+  const gain = audioCtx.createGain(); gain.gain.value = 0.5;
+  src.connect(filter).connect(gain).connect(masterGain);
+  src.start();
+}
+function playBreakSound(){ playNoiseBurst(0.12, 500); }
+function playPlaceSound(){ playNoiseBurst(0.08, 900); }
+
+/* ============================== 11. ИНВЕНТАРЬ И КРАФТ (CLICK-TO-CARRY) ============================== */
+
+function addItem(id, count){
+  for (let i=0;i<inventory.length && count>0;i++){
+    const s = inventory[i];
+    if (s && s.id===id && s.count<64){
+      const add = Math.min(count, 64-s.count);
+      s.count += add; count -= add;
+    }
+  }
+  for (let i=0;i<inventory.length && count>0;i++){
+    if (!inventory[i]){
+      const add = Math.min(count,64);
+      inventory[i] = { id, count:add }; count -= add;
+    }
+  }
+  renderHotbar();
+  if (inventoryOpen) renderInventory();
+}
+
+function renderHotbar(){
+  const el = document.getElementById('hotbar');
+  el.innerHTML = '';
+  for (let i=0;i<9;i++){
+    const slot = inventory[i];
+    const div = document.createElement('div');
+    div.className = 'slot' + (i===selectedSlot ? ' selected':'');
+    if (slot){
+      div.style.backgroundImage = `url(${iconURLs[slot.id]})`;
+      const cnt = document.createElement('div'); cnt.className='count';
+      cnt.textContent = slot.count>1 ? slot.count : '';
+      div.appendChild(cnt);
+    }
+    el.appendChild(div);
+  }
+}
+function selectHotbar(i){ selectedSlot = ((i%9)+9)%9; renderHotbar(); }
+
+// Обновление позиции переносимого предмета под курсором
+document.addEventListener('mousemove', e => {
+  if (inventoryOpen && carriedItem) {
+    const cur = document.getElementById('cursorItem');
+    cur.style.left = (e.clientX - 26) + 'px';
+    cur.style.top = (e.clientY - 26) + 'px';
+  }
+});
+
+function renderCursorItem() {
+  const cur = document.getElementById('cursorItem');
+  if (inventoryOpen && carriedItem) {
+    cur.classList.remove('hidden');
+    cur.style.backgroundImage = `url(${iconURLs[carriedItem.id]})`;
+    cur.innerHTML = `<div class="count">${carriedItem.count > 1 ? carriedItem.count : ''}</div>`;
+  } else {
+    cur.classList.add('hidden');
+    cur.innerHTML = '';
+  }
+}
+
+function renderInventory(){
+  const grid = document.getElementById('invGrid');
+  grid.innerHTML = '';
+  for (let i=0;i<inventory.length;i++){
+    const slot = inventory[i];
+    const div = document.createElement('div');
+    div.className = 'slot';
+    if (slot){
+      div.style.backgroundImage = `url(${iconURLs[slot.id]})`;
+      const cnt = document.createElement('div'); cnt.className='count';
+      cnt.textContent = slot.count>1 ? slot.count : '';
+      div.appendChild(cnt);
+    }
+    div.addEventListener('mousedown', (e) => handleSlotClick(e, 'inv', i));
+    grid.appendChild(div);
+  }
+  renderCrafting();
+}
+
+function renderCrafting(){
+  const grid = document.getElementById('craftGrid');
+  grid.innerHTML = '';
+  for (let i=0; i<4; i++){
+    const slot = craftInput[i];
+    const div = document.createElement('div');
+    div.className = 'slot';
+    if (slot){
+      div.style.backgroundImage = `url(${iconURLs[slot.id]})`;
+      const cnt = document.createElement('div'); cnt.className='count';
+      cnt.textContent = slot.count>1 ? slot.count : '';
+      div.appendChild(cnt);
+    }
+    div.addEventListener('mousedown', (e) => handleSlotClick(e, 'craft-input', i));
+    grid.appendChild(div);
+  }
+
+  const outDiv = document.getElementById('craftOutputSlot');
+  outDiv.innerHTML = '';
+  outDiv.style.backgroundImage = '';
+  if (craftOutput){
+    outDiv.style.backgroundImage = `url(${iconURLs[craftOutput.id]})`;
+    const cnt = document.createElement('div'); cnt.className='count';
+    cnt.textContent = craftOutput.count>1 ? craftOutput.count : '';
+    outDiv.appendChild(cnt);
+  }
+}
+
+function matchRecipe(){
+  for (const recipe of RECIPES){
+    let match = true;
+    for (let i=0; i<4; i++){
+      const req = recipe.input[i] || null;
+      const got = craftInput[i] ? craftInput[i].id : null;
+      if (req !== got){
+        match = false;
+        break;
+      }
+    }
+    if (match) return recipe.output;
+  }
+  return null;
+}
+
+function updateCrafting(){
+  const matched = matchRecipe();
+  if (matched){
+    craftOutput = { id: matched.id, count: matched.count };
+  } else {
+    craftOutput = null;
+  }
+  renderCrafting();
+}
+
+function setSlot(type, index, val) {
+  if (type === 'inv') inventory[index] = val;
+  else if (type === 'craft-input') craftInput[index] = val;
+}
+
+function handleSlotClick(e, type, index) {
+  e.preventDefault();
+  
+  // Определяем, разделяем ли стак: ПКМ (e.button === 2) или доп. кнопки мыши Mouse 4/5 (e.button === 3/4)
+  const isSplitAction = (e.button === 2 || e.button === 4 || e.button === 3);
+  
+  let slot = null;
+  if (type === 'inv') slot = inventory[index];
+  else if (type === 'craft-input') slot = craftInput[index];
+  else if (type === 'craft-output') slot = craftOutput;
+  
+  // Обработка клика по выходу крафта
+  if (type === 'craft-output') {
+    if (!craftOutput) return;
+    if (isSplitAction) {
+      // ПКМ / XButton по результату - автоматический крафт напрямую в инвентарь
+      tryCraft();
+    } else {
+      // ЛКМ по результату - крафт на курсор
+      tryCraftToCursor();
+    }
+    return;
+  }
+  
+  // Стандартные ячейки инвентаря и крафта
+  if (!carriedItem) {
+    if (slot) {
+      if (isSplitAction) {
+        // Забираем половину стека (округление вверх)
+        const take = Math.ceil(slot.count / 2);
+        const keep = slot.count - take;
+        carriedItem = { id: slot.id, count: take };
+        setSlot(type, index, keep > 0 ? { id: slot.id, count: keep } : null);
+      } else {
+        // Забираем весь стек
+        carriedItem = slot;
+        setSlot(type, index, null);
+      }
+      playPlaceSound();
+    }
+  } else {
+    // В руках есть блок
+    if (!slot) {
+      // Пустая ячейка
+      if (isSplitAction) {
+        // Кладём ровно 1 блок
+        setSlot(type, index, { id: carriedItem.id, count: 1 });
+        carriedItem.count--;
+        if (carriedItem.count <= 0) carriedItem = null;
+      } else {
+        // Кладём весь стек
+        setSlot(type, index, carriedItem);
+        carriedItem = null;
+      }
+      playPlaceSound();
+    } else if (slot.id === carriedItem.id) {
+      // Стакаем блоки одного типа
+      if (isSplitAction) {
+        if (slot.count < 64) {
+          slot.count++;
+          carriedItem.count--;
+          if (carriedItem.count <= 0) carriedItem = null;
+          playPlaceSound();
+        }
+      } else {
+        const total = slot.count + carriedItem.count;
+        if (total <= 64) {
+          slot.count = total;
+          carriedItem = null;
+        } else {
+          slot.count = 64;
+          carriedItem.count = total - 64;
+        }
+        playPlaceSound();
+      }
+    } else {
+      // Разные типы блоков (только по ЛКМ меняем местами)
+      if (!isSplitAction) {
+        const temp = slot;
+        setSlot(type, index, carriedItem);
+        carriedItem = temp;
+        playPlaceSound();
+      }
+    }
+  }
+  
+  updateCrafting();
+  renderInventory();
+  renderHotbar();
+  renderCursorItem();
+}
+
+function consumeCraftMaterials(){
+  for (let i=0; i<4; i++){
+    if (craftInput[i]){
+      craftInput[i].count--;
+      if (craftInput[i].count <= 0) craftInput[i] = null;
+    }
+  }
+  playPlaceSound();
+}
+
+function tryCraftToCursor() {
+  if (!craftOutput) return;
+  if (!carriedItem) {
+    carriedItem = { id: craftOutput.id, count: craftOutput.count };
+    consumeCraftMaterials();
+    updateCrafting();
+    renderInventory();
+    renderHotbar();
+    renderCursorItem();
+  } else if (carriedItem.id === craftOutput.id && carriedItem.count + craftOutput.count <= 64) {
+    carriedItem.count += craftOutput.count;
+    consumeCraftMaterials();
+    updateCrafting();
+    renderInventory();
+    renderHotbar();
+    renderCursorItem();
+  } else {
+    flashMessage('Освободите руку или место!');
+  }
+}
+
+function tryCraft(){
+  if (!craftOutput) return;
+  const tempInv = JSON.parse(JSON.stringify(inventory));
+  let count = craftOutput.count;
+  const id = craftOutput.id;
+  
+  for (let i=0; i<tempInv.length && count>0; i++){
+    const s = tempInv[i];
+    if (s && s.id===id && s.count<64){
+      const add = Math.min(count, 64-s.count);
+      s.count += add; count -= add;
+    }
+  }
+  for (let i=0; i<tempInv.length && count>0; i++){
+    if (!tempInv[i]){
+      const add = Math.min(count, 64);
+      tempInv[i] = { id, count: add }; count -= add;
+    }
+  }
+  
+  if (count === 0){
+    inventory = tempInv;
+    consumeCraftMaterials();
+    updateCrafting();
+    renderInventory();
+    renderHotbar();
+  } else {
+    flashMessage('Нет места в инвентаре!');
+  }
+}
+
+let toastTimer=null;
+function flashMessage(text){
+  const el = document.getElementById('toast');
+  el.textContent = text; el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.add('hidden'), 1800);
+}
+
+function updateMiningUI(fraction){
+  const bar = document.getElementById('miningBar');
+  if (fraction<=0){ bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  bar.querySelector('.fill').style.width = (fraction*100)+'%';
+}
+
+function updateDebugHUD(fps){
+  const el = document.getElementById('debug');
+  if (!debugVisible){ el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const p = player.position;
+  const cx = Math.floor(p.x/CHUNK_SIZE), cz = Math.floor(p.z/CHUNK_SIZE);
+  const chunk = world.getChunk(cx,cz);
+  const hh = Math.floor(worldTime*24), mm = Math.floor((worldTime*24*60)%60);
+  el.textContent =
+`VoxelCraft debug (F3)
+FPS: ${fps}
+XYZ: ${p.x.toFixed(2)} / ${p.y.toFixed(2)} / ${p.z.toFixed(2)}
+Чанк: ${cx}, ${cz}   загружено: ${world.chunks.size}
+Биом: ${chunk ? chunk.biome : '—'}
+Время: ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}
+В воде: ${player.inWater?'да':'нет'}   на земле: ${player.grounded?'да':'нет'}`;
+}
+
+function toggleDebug(){ debugVisible = !debugVisible; }
+
+function toggleInventory(){
+  if (!gameStarted || paused) return;
+  inventoryOpen = !inventoryOpen;
+  document.getElementById('inventoryScreen').classList.toggle('hidden', !inventoryOpen);
+  if (inventoryOpen){
+    renderInventory();
+    if (document.pointerLockElement) document.exitPointerLock();
+  } else {
+    // Безопасный возврат зажатого предмета в инвентарь при выходе
+    if (carriedItem) {
+      addItem(carriedItem.id, carriedItem.count);
+      carriedItem = null;
+      renderCursorItem();
+    }
+    if (!paused) { renderer.domElement.requestPointerLock(); }
+  }
+}
+
+/* ============================== 12. СОХРАНЕНИЕ / ЗАГРУЗКА ============================== */
+
+const SAVE_KEY = 'voxelcraft_save_v1';
+
+function serializeWorld(){
+  const chunkEdits = {};
+  for (const [key,edits] of world.persistedEdits) chunkEdits[key] = edits;
+  for (const [key,chunk] of world.chunks) if (chunk.edits) chunkEdits[key] = chunk.edits;
+  return {
+    version:1, seed: world.seed, time: worldTime,
+    player: { position: player.position.toArray(), yaw: yawObject.rotation.y, pitch: camera.rotation.x },
+    inventory,
+    chunkEdits,
+  };
+}
+function saveGame(silent){
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()));
+    if (!silent) flashMessage('Мир сохранён');
+    return true;
+  } catch(e){ console.warn('Не удалось сохранить игру:', e); if (!silent) flashMessage('Ошибка сохранения'); return false; }
+}
+function loadGame(){
+  let raw;
+  try{ raw = localStorage.getItem(SAVE_KEY); } catch(e){ return false; }
+  if (!raw) return false;
+  try{
+    const data = JSON.parse(raw);
+    resetWorld(data.seed);
+    worldTime = data.time ?? 0.3;
+    player.position.fromArray(data.player.position);
+    yawObject.rotation.y = data.player.yaw || 0;
+    camera.rotation.x = data.player.pitch || 0;
+    if (data.inventory) inventory = data.inventory;
+    for (const key in data.chunkEdits) world.persistedEdits.set(key, data.chunkEdits[key]);
+    ensureChunksAround(player.position.x, player.position.z);
+    flashMessage('Мир загружен');
+    return true;
+  } catch(e){ console.warn('Ошибка загрузки:', e); flashMessage('Не удалось загрузить мир'); return false; }
+}
+
+function resetWorld(seed){
+  if (world){
+    for (const [,chunk] of world.chunks){
+      if (chunk.mesh){ scene.remove(chunk.mesh); chunk.mesh.geometry.dispose(); }
+      if (chunk.waterMesh){ scene.remove(chunk.waterMesh); chunk.waterMesh.geometry.dispose(); }
+    }
+  }
+  world = new World(seed);
+  player.world = world;
+  craftInput = new Array(4).fill(null);
+  updateCrafting();
+}
+function ensureChunksAround(px,pz){
+  const cx=Math.floor(px/CHUNK_SIZE), cz=Math.floor(pz/CHUNK_SIZE);
+  for (let dx=-1;dx<=1;dx++) for (let dz=-1;dz<=1;dz++) world.loadChunk(cx+dx,cz+dz);
+  world.processDirty(scene, materials, 999);
+}
+function spawnPlayer(){
+  ensureChunksAround(0,0);
+  let sy = CHUNK_HEIGHT-1;
+  for (let y=CHUNK_HEIGHT-1;y>0;y--){
+    const id = world.getBlock(0,y,0);
+    if (id!==BLOCK.AIR && id!==BLOCK.WATER){ sy=y+2; break; }
+  }
+  player.position.set(0.5, sy, 0.5);
+  player.velocity.set(0,0,0);
+}
+
+function startNewGame(){
+  const seed = Math.floor(Math.random()*1e9);
+  resetWorld(seed);
+  inventory = new Array(36).fill(null);
+  inventory[0] = { id: BLOCK.DIRT, count: 32 };
+  inventory[1] = { id: BLOCK.WOOD, count: 8 };
+  inventory[2] = { id: BLOCK.STONE, count: 16 };
+  inventory[3] = { id: BLOCK.SAND, count: 16 };
+  worldTime = 0.3;
+  spawnPlayer();
+  saveGame(true);
+  beginPlay();
+}
+function beginPlay(){
+  document.getElementById('startScreen').classList.add('hidden');
+  gameStarted = true; paused = false; inventoryOpen = false;
+  document.getElementById('pauseMenu').classList.add('hidden');
+  document.getElementById('inventoryScreen').classList.add('hidden');
+  renderHotbar();
+  initAudio();
+  renderer.domElement.requestPointerLock();
+}
+
+/* ============================== 13. ВВОД ============================== */
+
+const input = {
+  forward:false, back:false, left:false, right:false, jump:false, crouch:false, sprint:false,
+  mouseDown:false, forwardDir:new THREE.Vector3(), rightDir:new THREE.Vector3(),
+};
+
+window.addEventListener('keydown', e=>{
+  if (e.code==='Escape' && inventoryOpen){ toggleInventory(); return; }
+  if (!gameStarted) return;
+  switch(e.code){
+    case 'KeyW': input.forward=true; break;
+    case 'KeyS': input.back=true; break;
+    case 'KeyA': input.left=true; break;
+    case 'KeyD': input.right=true; break;
+    case 'Space': input.jump=true; e.preventDefault(); break;
+    case 'ShiftLeft': case 'ShiftRight': input.crouch=true; input.sprint=true; break;
+    case 'KeyE': toggleInventory(); break;
+    case 'F3': toggleDebug(); e.preventDefault(); break;
+    default:
+      if (e.code.startsWith('Digit') && locked){
+        const n = +e.code.slice(5);
+        if (n>=1 && n<=9) selectHotbar(n-1);
+      }
+  }
+});
+window.addEventListener('keyup', e=>{
+  switch(e.code){
+    case 'KeyW': input.forward=false; break;
+    case 'KeyS': input.back=false; break;
+    case 'KeyA': input.left=false; break;
+    case 'KeyD': input.right=false; break;
+    case 'Space': input.jump=false; break;
+    case 'ShiftLeft': case 'ShiftRight': input.crouch=false; input.sprint=false; break;
+  }
+});
+
+renderer.domElement.addEventListener('click', ()=>{
+  if (gameStarted && !paused && !inventoryOpen && !document.pointerLockElement){
+    renderer.domElement.requestPointerLock();
+  }
+});
+document.addEventListener('pointerlockchange', ()=>{
+  locked = document.pointerLockElement === renderer.domElement;
+  if (gameStarted && !locked && !inventoryOpen){
+    paused = true;
+    document.getElementById('pauseMenu').classList.remove('hidden');
+  }
+});
+document.addEventListener('mousemove', e=>{
+  if (!locked) return;
+  const sens = settings.sensitivity * 0.0022;
+  yawObject.rotation.y -= e.movementX*sens;
+  camera.rotation.x = clamp(camera.rotation.x - e.movementY*sens, -Math.PI/2+0.01, Math.PI/2-0.01);
+});
+renderer.domElement.addEventListener('mousedown', e=>{
+  if (!locked) return;
+  if (e.button===0) input.mouseDown = true;
+  else if (e.button===2) placeBlock();
+});
+renderer.domElement.addEventListener('mouseup', e=>{ if (e.button===0) input.mouseDown=false; });
+renderer.domElement.addEventListener('contextmenu', e=>e.preventDefault());
+renderer.domElement.addEventListener('wheel', e=>{
+  if (!locked) return;
+  selectHotbar(selectedSlot + Math.sign(e.deltaY));
+});
+
+// Блокировка вызова контекстного меню браузера во время открытого инвентаря для беспрепятственного использования ПКМ
+window.addEventListener('contextmenu', e => {
+  if (inventoryOpen) e.preventDefault();
+});
+
+function tryMine(dt, hit){
+  if (!input.mouseDown || paused || inventoryOpen || !hit){ miningKey=null; updateMiningUI(0); return; }
+  const def = BLOCK_DEF[hit.id];
+  if (def.unbreakable){ updateMiningUI(0); return; }
+  const key = hit.block.join(',');
+  if (miningKey !== key){ miningKey = key; miningProgress = 0; }
+  miningProgress += dt;
+  const needed = def.hardness || 0.5;
+  updateMiningUI(Math.min(1, miningProgress/needed));
+  if (miningProgress >= needed){
+    world.setBlock(hit.block[0], hit.block[1], hit.block[2], BLOCK.AIR);
+    addItem(def.drop ?? hit.id, 1);
+    playBreakSound();
+    miningKey = null; miningProgress = 0; updateMiningUI(0);
+  }
+}
+function placeBlock(){
+  const origin = new THREE.Vector3(), dir = new THREE.Vector3();
+  camera.getWorldPosition(origin); camera.getWorldDirection(dir);
+  const hit = raycastVoxels(world, origin, dir);
+  if (!hit) return;
+  const slot = inventory[selectedSlot];
+  if (!slot || slot.count<=0) return;
+  const [px,py,pz] = hit.place;
+  if (py<0 || py>=CHUNK_HEIGHT) return;
+  const box = player.getAABB(player.position);
+  const overlapsPlayer = px+1>box.minX && px<box.maxX && py+1>box.minY && py<box.maxY && pz+1>box.minZ && pz<box.maxZ;
+  if (overlapsPlayer) return;
+  if (world.setBlock(px,py,pz, slot.id)){
+    slot.count--; if (slot.count<=0) inventory[selectedSlot]=null;
+    playPlaceSound(); renderHotbar();
+  }
+}
+
+/* ============================== 14. МЕНЮ И КНОПКИ ============================== */
+
+document.getElementById('btnNewGame').addEventListener('click', startNewGame);
+document.getElementById('btnContinue').addEventListener('click', ()=>{ if (!loadGame()) startNewGame(); else beginPlay(); });
+document.getElementById('btnResume').addEventListener('click', ()=>{
+  paused=false; document.getElementById('pauseMenu').classList.add('hidden');
+  renderer.domElement.requestPointerLock();
+});
+document.getElementById('btnSave').addEventListener('click', ()=>saveGame(false));
+document.getElementById('btnLoad').addEventListener('click', ()=>{
+  if (loadGame()){ paused=false; document.getElementById('pauseMenu').classList.add('hidden'); renderer.domElement.requestPointerLock(); }
+});
+document.getElementById('btnNewWorldPause').addEventListener('click', ()=>{
+  document.getElementById('pauseMenu').classList.add('hidden'); paused=false; startNewGame();
+});
+document.getElementById('sensSlider').addEventListener('input', e=>{ settings.sensitivity = +e.target.value; saveSettingsToStorage(); });
+document.getElementById('volSlider').addEventListener('input', e=>{ settings.volume = +e.target.value; if (masterGain) masterGain.gain.value = settings.volume; saveSettingsToStorage(); });
+document.getElementById('renderDistSlider').addEventListener('input', e=>{ settings.renderDistance = +e.target.value; saveSettingsToStorage(); });
+document.getElementById('fovSlider').addEventListener('input', e=>{ settings.fov = +e.target.value; camera.fov = settings.fov; camera.updateProjectionMatrix(); saveSettingsToStorage(); });
+
+// Клик по ячейке крафта на выходе
+document.getElementById('craftOutputSlot').addEventListener('mousedown', (e) => handleSlotClick(e, 'craft-output', 0));
+
+try{
+  if (localStorage.getItem(SAVE_KEY)) document.getElementById('btnContinue').classList.remove('hidden');
+}catch(e){ }
+
+setInterval(()=>{ if (gameStarted) saveGame(true); }, 30000);
+window.addEventListener('beforeunload', ()=>{ if (gameStarted) saveGame(true); });
+
+/* ============================== 15. ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ ============================== */
+
+let lastTime = performance.now();
+let fpsAccum=0, fpsCounter=0, fpsDisplay=0;
+
+function animate(now){
+  requestAnimationFrame(animate);
+  let dt = (now-lastTime)/1000; lastTime = now;
+  dt = Math.min(dt, 0.1);
+
+  fpsAccum += dt; fpsCounter++;
+  if (fpsAccum >= 1){ fpsDisplay = Math.round(fpsCounter/fpsAccum); fpsAccum=0; fpsCounter=0; }
+
+  if (gameStarted && !paused && !inventoryOpen){
+    input.forwardDir.set(0,0,-1).applyQuaternion(yawObject.quaternion); input.forwardDir.y=0; input.forwardDir.normalize();
+    input.rightDir.set(1,0,0).applyQuaternion(yawObject.quaternion); input.rightDir.y=0; input.rightDir.normalize();
+    player.sprinting = input.sprint && input.forward;
+
+    player.update(dt, input);
+    yawObject.position.set(player.position.x, player.position.y+player.eyeHeight, player.position.z);
+
+    const origin = new THREE.Vector3(), dir = new THREE.Vector3();
+    camera.getWorldPosition(origin); camera.getWorldDirection(dir);
+    const hit = raycastVoxels(world, origin, dir);
+    tryMine(dt, hit);
+    if (hit){ highlightBox.visible=true; highlightBox.position.set(hit.block[0]+0.5,hit.block[1]+0.5,hit.block[2]+0.5); }
+    else highlightBox.visible = false;
+
+    updateDayNight(dt);
+    world.updateChunks(player.position.x, player.position.z, settings.renderDistance, scene);
+    world.processLoadQueue(2);
+    world.processDirty(scene, materials, 2);
+
+    updateDebugHUD(fpsDisplay);
+  }
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
